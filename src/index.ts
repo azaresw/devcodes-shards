@@ -41,5 +41,12 @@ export type {
   PendingBroadcast,
 } from './types';
 
+// ─── Distributed (multi-machine) ─────────────────────────────────────────────
+export { MachineCoordinator } from './distributed/MachineCoordinator';
+export type { MachineCoordinatorOptions, MachineEntry } from './distributed/MachineCoordinator';
+
+export { MachineClient } from './distributed/MachineClient';
+export type { MachineClientOptions, RemoteClusterEntry, GlobalMachineEntry } from './distributed/MachineClient';
+
 // ─── Utils (re-exported for advanced users) ───────────────────────────────────
 export { calcShardId, fetchGatewayShards, generateNonce } from './util/Util';

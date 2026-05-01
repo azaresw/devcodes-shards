@@ -1,7 +1,7 @@
 {
   "name": "devcodes-sharding",
-  "version": "1.0.0",
-  "description": "Advanced Discord.js sharding — hot-add/remove shards at runtime, auto-scaling, heartbeat system, and zero-downtime operations. Your bot grows without rebooting.",
+  "version": "1.1.0",
+  "description": "Advanced Discord.js sharding — hot-add/remove shards at runtime, auto-scaling, multi-machine distributed sharding, heartbeat system, and zero-downtime operations. Your bot grows without rebooting.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
