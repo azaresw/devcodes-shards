@@ -29,7 +29,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/devcodes/devcodes-sharding"
+    "url": "https://github.com/azaresw/devcodes-shards"
   },
   "devDependencies": {
     "@types/node": "^20.12.0",
