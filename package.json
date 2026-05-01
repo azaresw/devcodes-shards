@@ -1,0 +1,38 @@
+{
+  "name": "devcodes-sharding",
+  "version": "1.0.0",
+  "description": "Advanced Discord.js sharding — hot-add/remove shards at runtime, auto-scaling, heartbeat system, and zero-downtime operations. Your bot grows without rebooting.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/**",
+    "src/**"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "discord",
+    "discord.js",
+    "sharding",
+    "clustering",
+    "hot-reload",
+    "auto-scaling",
+    "zero-downtime"
+  ],
+  "author": "Devcodes",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/devcodes/devcodes-sharding"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "typescript": "^5.4.0"
+  }
+}
