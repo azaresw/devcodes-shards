@@ -93,6 +93,7 @@ export class MachineClient extends EventEmitter {
   private _buf = '';
   private _destroyed = false;
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private _retrying = false;
 
   constructor(manager: ShardingManager, options: MachineClientOptions) {
     super();
@@ -139,14 +140,14 @@ export class MachineClient extends EventEmitter {
 
       socket.on('error', err => {
         this.emit('error', err);
-        // reject only for the first connection error
-        reject(err);
+        // Only reject for the initial connect() call — retries are handled by _startRetryLoop
+        if (!this._retrying) reject(err);
       });
 
       socket.on('close', () => {
         this.emit('disconnect');
         if (!this._destroyed && (this._options.reconnect ?? true)) {
-          this._scheduleReconnect();
+          this._startRetryLoop();
         }
       });
     });
@@ -199,6 +200,7 @@ export class MachineClient extends EventEmitter {
    */
   disconnect(): void {
     this._destroyed = true;
+    this._retrying = false;
     if (this._reconnectTimer !== null) {
       clearTimeout(this._reconnectTimer);
       this._reconnectTimer = null;
@@ -339,5 +341,55 @@ export class MachineClient extends EventEmitter {
       this._reconnectTimer = null;
       this.connect().catch(() => { /* will retry again on next close */ });
     }, delay);
+  }
+
+  private _startRetryLoop(): void {
+    if (this._retrying || this._destroyed) return;
+    this._retrying = true;
+    const delay = this._options.reconnectDelay ?? 5_000;
+
+    const attempt = (): void => {
+      if (this._destroyed) { this._retrying = false; return; }
+      this._reconnectTimer = setTimeout(() => {
+        this._reconnectTimer = null;
+        if (this._destroyed) { this._retrying = false; return; }
+
+        const socket = new net.Socket();
+        this._socket = socket;
+        socket.setKeepAlive(true, 15_000);
+
+        socket.connect(this._options.coordinatorPort, this._options.coordinatorHost, () => {
+          this._retrying = false;
+          this._register();
+          this.emit('connect');
+        });
+
+        socket.on('data', chunk => {
+          this._buf += chunk.toString('utf8');
+          const lines = this._buf.split('\n');
+          this._buf = lines.pop() ?? '';
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            try {
+              this._handleMessage(JSON.parse(trimmed) as Record<string, unknown>);
+            } catch { /* malformed */ }
+          }
+        });
+
+        socket.on('error', err => { this.emit('error', err); });
+
+        socket.on('close', () => {
+          this.emit('disconnect');
+          if (!this._destroyed && (this._options.reconnect ?? true)) {
+            attempt(); // schedule next attempt
+          } else {
+            this._retrying = false;
+          }
+        });
+      }, delay);
+    };
+
+    attempt();
   }
 }

@@ -198,7 +198,7 @@ coordinator.on('clusterRemoved', (machine, clusterId)         => console.log(`${
 ### 2. Connect each machine (run on every bot server)
 
 ```js
-const { ShardingManager, MachineClient } = require('devcodes-sharding');
+const { ShardingManager, MachineCoordinator, MachineClient } = require('devcodes-sharding');
 
 const manager = new ShardingManager('./bot.js', {
   totalShards: 16,
