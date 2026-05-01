@@ -17,6 +17,8 @@ Built on top of the ideas from `discord-hybrid-sharding` but with first-class su
 | Hot-add cluster (zero downtime) | ✗ needs full recluster | ✅ `manager.addCluster()` |
 | Hot-remove single cluster | ✗ | ✅ `manager.removeCluster(id)` |
 | Auto scale-DOWN (remove idle clusters) | ✗ | ✅ built-in |
+| Multi-machine distributed sharding | ✗ | ✅ `MachineCoordinator` + `MachineClient` |
+| Cross-machine cluster sync (add/remove) | ✗ | ✅ instant TCP broadcast to all machines |
 | Guilds-per-shard threshold config | plugin only | ✅ top-level `guildsPerShard` option |
 | `'auto'` guilds/shard mode | ✗ | ✅ uses Discord's recommended 2 000 ceiling |
 | Master logging toggle | ✗ | ✅ `logging: false` silences everything |
@@ -152,6 +154,140 @@ manager.extend(new AutoScaler({
     return [[0, 1200], [1, 1800]];
   },
 }));
+```
+
+---
+
+## Multi-Machine Distributed Sharding
+
+Split your shards across **multiple servers/VMs** while keeping every machine in sync. When any machine hot-adds or hot-removes a cluster, every other machine is notified instantly — no restarts, no manual coordination.
+
+### Architecture
+
+```
+  Machine A (shards 0-7)          Machine B (shards 8-15)
+  ┌─────────────────────┐         ┌─────────────────────┐
+  │  ShardingManager    │         │  ShardingManager    │
+  │  MachineClient ─────┼────┐ ┌──┼─ MachineClient      │
+  └─────────────────────┘    │ │  └─────────────────────┘
+                              ▼ ▼
+                    ┌──────────────────┐
+                    │ MachineCoordinator│  (any machine or dedicated node)
+                    └──────────────────┘
+```
+
+### 1. Start the coordinator (once, on any machine or dedicated node)
+
+```js
+const { MachineCoordinator } = require('devcodes-sharding');
+
+const coordinator = new MachineCoordinator({
+  port: 4000,
+  password: 'my-secret',  // optional but recommended
+});
+
+await coordinator.listen();
+console.log('Coordinator ready on :4000');
+
+coordinator.on('machineRegistered',  id => console.log(`Machine joined: ${id}`));
+coordinator.on('machineDisconnected', id => console.log(`Machine left:   ${id}`));
+coordinator.on('clusterAdded',   (machine, clusterId, shards) => console.log(`${machine} added cluster ${clusterId}`));
+coordinator.on('clusterRemoved', (machine, clusterId)         => console.log(`${machine} removed cluster ${clusterId}`));
+```
+
+### 2. Connect each machine (run on every bot server)
+
+```js
+const { ShardingManager, MachineClient } = require('devcodes-sharding');
+
+const manager = new ShardingManager('./bot.js', {
+  totalShards: 16,
+  shardList: [0, 1, 2, 3, 4, 5, 6, 7],  // this machine's slice
+  token: process.env.TOKEN,
+});
+
+await manager.spawn();
+
+const machine = new MachineClient(manager, {
+  machineId: 'machine-a',           // must be unique across the fleet
+  coordinatorHost: '10.0.0.1',      // coordinator IP
+  coordinatorPort: 4000,
+  password: 'my-secret',
+  reconnect: true,                  // auto-reconnect on disconnect (default: true)
+  reconnectDelay: 5000,             // ms before each reconnect attempt (default: 5000)
+});
+
+await machine.connect();
+```
+
+### 3. Global registry — see every cluster on every machine
+
+```js
+// Returns an array of { machineId, clusters: [{ id, shardList }] } for ALL machines
+const registry = machine.getGlobalRegistry();
+console.log(registry);
+// [
+//   { machineId: 'machine-a', clusters: [{ id: 0, shardList: [0,1,2,3] }, ...] },
+//   { machineId: 'machine-b', clusters: [{ id: 0, shardList: [8,9,10,11] }, ...] },
+// ]
+```
+
+### 4. Cross-machine guild routing
+
+```js
+// Find which machine + cluster handles a given guild
+const target = machine.findClusterForGuild('123456789012345678');
+// { machineId: 'machine-b', clusterId: 0 }
+```
+
+### 5. Automatic sync on hot-add / hot-remove
+
+Hot-add or hot-remove a cluster on **any** machine — every other machine is updated automatically:
+
+```js
+// On machine-a: add a cluster
+const cluster = await manager.addCluster({ shards: [6, 7] });
+// machine-b instantly receives: remoteClusterAdd event
+
+// On machine-b: remove a cluster
+await manager.removeCluster(1);
+// machine-a instantly receives: remoteClusterRemove event
+```
+
+### MachineClient Events
+
+```js
+machine.on('connect',             () => { })                                    // connected to coordinator
+machine.on('disconnect',          () => { })                                    // lost connection (will retry)
+machine.on('sync',                registry => { })                              // initial fleet snapshot received
+machine.on('machineJoin',         machineId => { })                             // another machine connected
+machine.on('machineLeave',        machineId => { })                             // another machine disconnected
+machine.on('remoteClusterAdd',    (machineId, clusterId, shardList) => { })     // remote hot-add
+machine.on('remoteClusterRemove', (machineId, clusterId) => { })                // remote hot-remove
+machine.on('error',               err => { })
+```
+
+### MachineCoordinator Options
+
+```js
+new MachineCoordinator({
+  port: 4000,           // TCP port to listen on
+  host: '0.0.0.0',      // bind address (default: all interfaces)
+  password: 'secret',   // optional shared secret — clients must supply the same value
+});
+```
+
+### MachineClient Options
+
+```js
+new MachineClient(manager, {
+  machineId: 'machine-a',        // unique ID for this machine
+  coordinatorHost: '10.0.0.1',   // coordinator address
+  coordinatorPort: 4000,         // coordinator port
+  password: 'secret',            // must match coordinator password (if set)
+  reconnect: true,               // auto-reconnect on disconnect
+  reconnectDelay: 5000,          // ms to wait before each reconnect attempt
+});
 ```
 
 ---
